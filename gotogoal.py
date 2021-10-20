@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 import rospy
 from geometry_msgs.msg import Twist
+from rosgraph_msgs.msg import Log
 from turtlesim.msg import Pose
-from math import pow, atan2, sqrt, pi
+from math import pow, atan2, sqrt, pi, floor
 import sys
+import time
 
 def parse_path(file_location):
     f = open(file_location, "r")
@@ -30,6 +32,12 @@ class TurtleBot:
         # Publisher which will publish to the topic '/turtle1/cmd_vel'.
         self.velocity_publisher = rospy.Publisher('/turtle1/cmd_vel',
                                                   Twist, queue_size=10)
+                                                  
+        # rosout publisher
+        self.log = rospy.Publisher('/rosout', Log, queue_size=10)
+        
+        self.error_publisher = rospy.Publisher('/turtlebot_controller/error', Pose, queue_size=10)
+
 
         # A subscriber to the topic '/turtle1/pose'. self.update_pose is called
         # when a message of type Pose is received.
@@ -38,6 +46,7 @@ class TurtleBot:
 
         self.pose = Pose()
         self.rate = rospy.Rate(10)
+        
 
     def update_pose(self, data):
         """Callback function which is called when a new message of type Pose is
@@ -70,6 +79,18 @@ class TurtleBot:
             
     def angle_diff(self,goal_pose):
         return (goal_pose.theta - self.pose.theta) % (2*pi)
+        
+    def publish_log(self, message):
+        log = Log()
+        log.msg = message
+        current_time = time.time()
+        s = floor(current_time)
+        ns = floor((current_time - s) * 1000000)
+        log.header.stamp.secs = s
+        log.header.stamp.nsecs = ns
+        log.name = rospy.get_name()
+        self.log.publish(log)
+    
 
     def move2goal(self,x,y,theta="Not used",distance_tolerance=0.1,angle_tolerance=0.01, constant_vel=0):
         """Moves the turtle to the goal."""
@@ -80,6 +101,12 @@ class TurtleBot:
         goal_pose.y = y
         if (theta != "Not used"):
           goal_pose.theta = theta
+          
+        # New goal
+        if (theta != "Not used"):
+            self.publish_log(f"New goal: (x={x}, y={y}, theta={theta})")
+        else:
+            self.publish_log(f"New goal: (x={x}, y={y})")
 
         vel_msg = Twist()
 
@@ -133,6 +160,13 @@ class TurtleBot:
         vel_msg.linear.x = 0
         vel_msg.angular.z = 0
         self.velocity_publisher.publish(vel_msg)
+        
+        # Goal reached
+        self.publish_log(f"Goal reached: (x={self.pose.x}, y={self.pose.y}, theta={self.pose.theta})")
+        error = Pose()
+        error.x = x - self.pose.x
+        error.y = y - self.pose.y
+        self.error_publisher.publish(error)
 
         # If we press control + C, the node will stop.
         # rospy.spin()
