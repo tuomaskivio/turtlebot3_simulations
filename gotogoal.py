@@ -1,10 +1,22 @@
 #!/usr/bin/env python
-#!/usr/bin/env python
 import rospy
 from geometry_msgs.msg import Twist
 from turtlesim.msg import Pose
-from math import pow, atan2, sqrt
+from math import pow, atan2, sqrt, pi
 import sys
+
+def parse_path(file_location):
+    f = open(file_location, "r")
+    path = f.read()
+    path = path.split("---\n")
+    path.pop()
+    for (i, pose) in enumerate(path):
+        pose = pose.split('\n')
+        pose = {'x': float(pose[0].split(': ')[1]),
+                'y': float(pose[1].split(': ')[1]),
+                'theta': float(pose[2].split(': ')[1])}
+        path[i] = pose
+    return path
 
 
 
@@ -39,7 +51,7 @@ class TurtleBot:
         return sqrt(pow((goal_pose.x - self.pose.x), 2) +
                     pow((goal_pose.y - self.pose.y), 2))
 
-    def linear_vel(self, goal_pose, constant=1.5):
+    def linear_vel(self, goal_pose, constant=6):
         """See video: https://www.youtube.com/watch?v=Qh15Nol5htM."""
         return constant * self.euclidean_distance(goal_pose)
 
@@ -47,24 +59,27 @@ class TurtleBot:
         """See video: https://www.youtube.com/watch?v=Qh15Nol5htM."""
         return atan2(goal_pose.y - self.pose.y, goal_pose.x - self.pose.x)
 
-    def angular_vel(self, goal_pose, constant=6, target_reached=False):
+    def angular_vel(self, goal_pose, constant=12, target_reached=False):
         """See video: https://www.youtube.com/watch?v=Qh15Nol5htM."""
         if (not target_reached):
-            return constant * (self.steering_angle(goal_pose) - self.pose.theta)
+            diff = self.steering_angle(goal_pose) - self.pose.theta
+            diff = (diff + pi) % (2*pi) - pi
+            return constant * diff
         else:
             return constant * self.angle_diff(goal_pose)
             
     def angle_diff(self,goal_pose):
-        return goal_pose.theta - self.pose.theta
+        return (goal_pose.theta - self.pose.theta) % (2*pi)
 
-    def move2goal(self,x,y,theta,distance_tolerance=0.01,angle_tolerance=0.01):
+    def move2goal(self,x,y,theta="Not used",distance_tolerance=0.1,angle_tolerance=0.01, constant_vel=0):
         """Moves the turtle to the goal."""
         goal_pose = Pose()
 
         # Get the input from the user.
         goal_pose.x = x
         goal_pose.y = y
-        goal_pose.theta = theta
+        if (theta != "Not used"):
+          goal_pose.theta = theta
 
         vel_msg = Twist()
 
@@ -74,7 +89,10 @@ class TurtleBot:
             # https://en.wikipedia.org/wiki/Proportional_control
 
             # Linear velocity in the x-axis.
-            vel_msg.linear.x = self.linear_vel(goal_pose)
+            if (constant_vel != 0):
+                vel_msg.linear.x = constant_vel
+            else:
+                vel_msg.linear.x = self.linear_vel(goal_pose)
             vel_msg.linear.y = 0
             vel_msg.linear.z = 0
 
@@ -90,7 +108,7 @@ class TurtleBot:
             self.rate.sleep()
         
 
-        while goal_theta != "Not used" and abs(self.angle_diff(goal_pose)) >= angle_tolerance:
+        while theta != "Not used" and abs(self.angle_diff(goal_pose)) >= angle_tolerance:
 
             # Porportional controller.
             # https://en.wikipedia.org/wiki/Proportional_control
@@ -120,14 +138,23 @@ class TurtleBot:
         # rospy.spin()
 
 if __name__ == '__main__':
-    goal_x = float(sys.argv[1])
-    goal_y = float(sys.argv[2])
-    if len(sys.argv) > 3:
-        goal_theta = float(sys.argv[3])
-    else:
-        goal_theta = "Not used"
-    try:
-        x = TurtleBot()
-        x.move2goal(goal_x, goal_y, goal_theta)
-    except rospy.ROSInterruptException:
-        pass
+    if (len(sys.argv) == 2):
+        path = parse_path(sys.argv[1])
+        try:
+            x = TurtleBot()
+            for pose in path:
+                x.move2goal(pose['x'], pose['y'], constant_vel=0)
+        except rospy.ROSInterruptException:
+            pass
+    else:    
+        goal_x = float(sys.argv[1])
+        goal_y = float(sys.argv[2])
+        if len(sys.argv) > 3:
+            goal_theta = float(sys.argv[3])
+        else:
+            goal_theta = "Not used"
+        try:
+            x = TurtleBot()
+            x.move2goal(goal_x, goal_y, goal_theta)
+        except rospy.ROSInterruptException:
+            pass
