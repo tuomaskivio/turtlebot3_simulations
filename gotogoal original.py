@@ -4,8 +4,6 @@ import rospy
 from geometry_msgs.msg import Twist
 from turtlesim.msg import Pose
 from math import pow, atan2, sqrt
-import sys
-
 
 
 class TurtleBot:
@@ -47,24 +45,20 @@ class TurtleBot:
         """See video: https://www.youtube.com/watch?v=Qh15Nol5htM."""
         return atan2(goal_pose.y - self.pose.y, goal_pose.x - self.pose.x)
 
-    def angular_vel(self, goal_pose, constant=6, target_reached=False):
+    def angular_vel(self, goal_pose, constant=6):
         """See video: https://www.youtube.com/watch?v=Qh15Nol5htM."""
-        if (not target_reached):
-            return constant * (self.steering_angle(goal_pose) - self.pose.theta)
-        else:
-            return constant * self.angle_diff(goal_pose)
-            
-    def angle_diff(self,goal_pose):
-        return goal_pose.theta - self.pose.theta
+        return constant * (self.steering_angle(goal_pose) - self.pose.theta)
 
-    def move2goal(self,x,y,theta,distance_tolerance=0.01,angle_tolerance=0.01):
+    def move2goal(self):
         """Moves the turtle to the goal."""
         goal_pose = Pose()
 
         # Get the input from the user.
-        goal_pose.x = x
-        goal_pose.y = y
-        goal_pose.theta = theta
+        goal_pose.x = float(input("Set your x goal: "))
+        goal_pose.y = float(input("Set your y goal: "))
+
+        # Please, insert a number slightly greater than 0 (e.g. 0.01).
+        distance_tolerance = float(input("Set your tolerance: "))
 
         vel_msg = Twist()
 
@@ -88,28 +82,6 @@ class TurtleBot:
 
             # Publish at the desired rate.
             self.rate.sleep()
-        
-
-        while goal_theta != "Not used" and abs(self.angle_diff(goal_pose)) >= angle_tolerance:
-
-            # Porportional controller.
-            # https://en.wikipedia.org/wiki/Proportional_control
-
-            # Linear velocity in the x-axis.
-            vel_msg.linear.x = 0
-            vel_msg.linear.y = 0
-            vel_msg.linear.z = 0
-            
-            # Angular velocity in the z-axis.
-            vel_msg.angular.x = 0
-            vel_msg.angular.y = 0
-            vel_msg.angular.z = self.angular_vel(goal_pose, target_reached=True)
-
-            # Publishing our vel_msg
-            self.velocity_publisher.publish(vel_msg)
-
-            # Publish at the desired rate.
-            self.rate.sleep()
 
         # Stopping our robot after the movement is over.
         vel_msg.linear.x = 0
@@ -120,14 +92,8 @@ class TurtleBot:
         # rospy.spin()
 
 if __name__ == '__main__':
-    goal_x = float(sys.argv[1])
-    goal_y = float(sys.argv[2])
-    if len(sys.argv) > 3:
-        goal_theta = float(sys.argv[3])
-    else:
-        goal_theta = "Not used"
     try:
         x = TurtleBot()
-        x.move2goal(goal_x, goal_y, goal_theta)
+        x.move2goal()
     except rospy.ROSInterruptException:
         pass
