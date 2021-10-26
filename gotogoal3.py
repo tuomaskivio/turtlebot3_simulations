@@ -3,6 +3,7 @@ import rospy
 from geometry_msgs.msg import Twist
 from rosgraph_msgs.msg import Log
 from turtlesim.msg import Pose
+from gazebo_msgs.msg import ModelStates
 from math import pow, atan2, sqrt, pi, floor
 import sys
 import time
@@ -29,8 +30,8 @@ class TurtleBot:
         # unique node (using anonymous=True).
         rospy.init_node('turtlebot_controller', anonymous=True)
 
-        # Publisher which will publish to the topic '/turtle1/cmd_vel'.
-        self.velocity_publisher = rospy.Publisher('/turtle1/cmd_vel',
+        # Publisher which will publish to the topic '/cmd_vel'.
+        self.velocity_publisher = rospy.Publisher('/cmd_vel',
                                                   Twist, queue_size=10)
                                                   
         # rosout publisher
@@ -39,10 +40,10 @@ class TurtleBot:
         self.error_publisher = rospy.Publisher('/turtlebot_controller/error', Pose, queue_size=10)
 
 
-        # A subscriber to the topic '/turtle1/pose'. self.update_pose is called
+        # A subscriber to the topic '/gazebo/model_states'. self.update_pose is called
         # when a message of type Pose is received.
-        self.pose_subscriber = rospy.Subscriber('/turtle1/pose',
-                                                Pose, self.update_pose)
+        self.pose_subscriber = rospy.Subscriber('/gazebo/model_states',
+                                                ModelStates, self.update_pose)
 
         self.pose = Pose()
         self.rate = rospy.Rate(10)
@@ -51,31 +52,33 @@ class TurtleBot:
     def update_pose(self, data):
         """Callback function which is called when a new message of type Pose is
         received by the subscriber."""
-        self.pose = data
-        self.pose.x = round(self.pose.x, 4)
-        self.pose.y = round(self.pose.y, 4)
+        pose = data.pose[2]
+        self.pose.x = round(pose.position.x, 4)
+        self.pose.y = round(pose.position.y, 4)
+        theta = atan2(pose.orientation.z, pose.orientation.w)*2
+        self.pose.theta = (theta + pi) % (2*pi) - pi
 
     def euclidean_distance(self, goal_pose):
         """Euclidean distance between current pose and the goal."""
         return sqrt(pow((goal_pose.x - self.pose.x), 2) +
                     pow((goal_pose.y - self.pose.y), 2))
 
-    def linear_vel(self, goal_pose, constant=6):
+    def linear_vel(self, goal_pose, constant=1.5):
         """See video: https://www.youtube.com/watch?v=Qh15Nol5htM."""
-        return constant * self.euclidean_distance(goal_pose)
+        vel = constant * self.euclidean_distance(goal_pose)
+        return max(-0.5,min(0.5,vel))
 
     def steering_angle(self, goal_pose):
         """See video: https://www.youtube.com/watch?v=Qh15Nol5htM."""
         return atan2(goal_pose.y - self.pose.y, goal_pose.x - self.pose.x)
 
-    def angular_vel(self, goal_pose, constant=12, target_reached=False):
+    def angular_vel(self, goal_pose, constant=2.5, target_reached=False):
         """See video: https://www.youtube.com/watch?v=Qh15Nol5htM."""
         if (not target_reached):
             steering_angle = self.steering_angle(goal_pose)
             diff = steering_angle - self.pose.theta
             diff = (diff + pi) % (2*pi) - pi
-            print(f'x: {self.pose.x}, y: {self.pose.y}, theta: {self.pose.theta}, steering angle: {steering_angle}')
-            return constant * diff
+            return max(-1.86,min(1.86,constant * diff))
         else:
             return constant * self.angle_diff(goal_pose)
             
@@ -94,7 +97,7 @@ class TurtleBot:
         self.log.publish(log)
     
 
-    def move2goal(self,x,y,theta="Not used",distance_tolerance=0.1,angle_tolerance=0.01, constant_vel=0):
+    def move2goal(self,x,y,theta="Not used",distance_tolerance=0.1,angle_tolerance=0.01, constant_vel=0, stop_after=True):
         """Moves the turtle to the goal."""
         goal_pose = Pose()
 
@@ -111,7 +114,9 @@ class TurtleBot:
             self.publish_log(f"New goal: (x={x}, y={y})")
 
         vel_msg = Twist()
-
+        while self.pose.x == 0:
+            pass
+            
         while self.euclidean_distance(goal_pose) >= distance_tolerance:
 
             # Porportional controller.
@@ -131,10 +136,16 @@ class TurtleBot:
             vel_msg.angular.z = self.angular_vel(goal_pose)
 
             # Publishing our vel_msg
-            #self.velocity_publisher.publish(vel_msg)
+            self.velocity_publisher.publish(vel_msg)
 
             # Publish at the desired rate.
             self.rate.sleep()
+            
+        if stop_after:
+          # Stopping our robot after the movement is over.
+          vel_msg.linear.x = 0
+          vel_msg.angular.z = 0
+          self.velocity_publisher.publish(vel_msg)
         
 
         while theta != "Not used" and abs(self.angle_diff(goal_pose)) >= angle_tolerance:
@@ -158,10 +169,11 @@ class TurtleBot:
             # Publish at the desired rate.
             self.rate.sleep()
 
-        # Stopping our robot after the movement is over.
-        vel_msg.linear.x = 0
-        vel_msg.angular.z = 0
-        self.velocity_publisher.publish(vel_msg)
+        if stop_after:
+          # Stopping our robot after the movement is over.
+          vel_msg.linear.x = 0
+          vel_msg.angular.z = 0
+          self.velocity_publisher.publish(vel_msg)
         
         # Goal reached
         self.publish_log(f"Goal reached: (x={self.pose.x}, y={self.pose.y}, theta={self.pose.theta})")
@@ -171,7 +183,7 @@ class TurtleBot:
         self.error_publisher.publish(error)
 
         # If we press control + C, the node will stop.
-        rospy.spin()
+        # rospy.spin()
 
 if __name__ == '__main__':
     if (len(sys.argv) == 2):
@@ -179,7 +191,10 @@ if __name__ == '__main__':
         try:
             x = TurtleBot()
             for pose in path:
-                x.move2goal(pose['x'], pose['y'], constant_vel=0)
+                if pose == path[-1]:
+                    x.move2goal(pose['x'], pose['y'], constant_vel=0.5, stop_after=True)
+                else:
+                    x.move2goal(pose['x'], pose['y'], constant_vel=0.5, stop_after=False)
         except rospy.ROSInterruptException:
             pass
     else:    
