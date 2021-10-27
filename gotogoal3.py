@@ -80,7 +80,7 @@ class TurtleBot:
             diff = (diff + pi) % (2*pi) - pi
             return max(-1.86,min(1.86,constant * diff))
         else:
-            return constant * self.angle_diff(goal_pose)
+            return constant*0.5 * self.angle_diff(goal_pose)
             
     def angle_diff(self,goal_pose):
         return (goal_pose.theta - self.pose.theta) % (2*pi)
@@ -97,7 +97,7 @@ class TurtleBot:
         self.log.publish(log)
     
 
-    def move2goal(self,x,y,theta="Not used",distance_tolerance=0.1,angle_tolerance=0.01, constant_vel=0, stop_after=True):
+    def move2goal(self,x,y,theta="Not used",distance_tolerance=0.1,angle_tolerance=0.1, constant_vel=0, stop_after=True):
         """Moves the turtle to the goal."""
         goal_pose = Pose()
 
