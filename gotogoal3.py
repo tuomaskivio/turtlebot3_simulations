@@ -21,6 +21,18 @@ def parse_path(file_location):
         path[i] = pose
     return path
 
+def parse_path_gazebo(file_location):
+    f = open(file_location, "r")
+    path = f.read()
+    path = path.split("<model name='beer")
+    path.pop(0)
+    for (i, pose) in enumerate(path):
+        pose = pose.split('<pose>')[1]
+        pose = pose.split(' ')
+        pose = {'x': float(pose[0]),
+                'y': float(pose[1])}
+        path[i] = pose
+    return path
 
 
 class TurtleBot:
@@ -187,7 +199,7 @@ class TurtleBot:
 
 if __name__ == '__main__':
     if (len(sys.argv) == 2):
-        path = parse_path(sys.argv[1])
+        path = parse_path_gazebo(sys.argv[1])
         try:
             x = TurtleBot()
             for pose in path:
